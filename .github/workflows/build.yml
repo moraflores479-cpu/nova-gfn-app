@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: unzip -o nova-gfn-app.zip -d proj
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -16,14 +15,35 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - run: gradle -p proj assembleDebug --no-daemon
-      - run: cp proj/app/build/outputs/apk/debug/app-debug.apk NOVA-GFN.apk
+
+      # APK 1: version original (nova-gfn-app.zip), paquete com.nova.gfn
+      - name: Build NOVA-GFN.apk
+        run: |
+          unzip -o nova-gfn-app.zip -d proj
+          gradle -p proj assembleDebug --no-daemon
+          cp proj/app/build/outputs/apk/debug/app-debug.apk NOVA-GFN.apk
+
+      # APK 2: version "(1)" con diag.js. Usa otro paquete y otro nombre para
+      # poder instalarse junto al primero (si no, Android lo rechaza por tener
+      # el mismo paquete con distinta firma debug).
+      - name: Build NOVA-GFN-diag.apk
+        run: |
+          unzip -o "nova-gfn-app (1).zip" -d proj2
+          sed -i "s/applicationId 'com.nova.gfn'/applicationId 'com.nova.gfn.diag'/" proj2/app/build.gradle
+          sed -i 's/android:label="NOVA GFN"/android:label="NOVA GFN diag"/' proj2/app/src/main/AndroidManifest.xml
+          grep -q "com.nova.gfn.diag" proj2/app/build.gradle
+          grep -q "NOVA GFN diag" proj2/app/src/main/AndroidManifest.xml
+          gradle -p proj2 assembleDebug --no-daemon
+          cp proj2/app/build/outputs/apk/debug/app-debug.apk NOVA-GFN-diag.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: NOVA-GFN
-          path: NOVA-GFN.apk
+          path: |
+            NOVA-GFN.apk
+            NOVA-GFN-diag.apk
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest NOVA-GFN.apk -t "NOVA GFN" -n "APK debug"
+          gh release create latest NOVA-GFN.apk NOVA-GFN-diag.apk -t "NOVA GFN" -n "APK debug (NOVA-GFN.apk = original, NOVA-GFN-diag.apk = version (1) con diag.js; se instalan por separado)"
