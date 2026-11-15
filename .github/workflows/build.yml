@@ -36,14 +36,30 @@ jobs:
           gradle -p proj2 assembleDebug --no-daemon
           cp proj2/app/build/outputs/apk/debug/app-debug.apk NOVA-GFN-diag.apk
 
+      # Versiones nuevas: cualquier nova-vN.zip en la raiz se compila solo.
+      # nova-v3.zip -> paquete com.nova.gfn.v3, app "NOVA GFN v3", NOVA-GFN-v3.apk
+      # (paquete distinto por version para que se instalen una junto a otra).
+      - name: Build nova-v*.zip
+        run: |
+          shopt -s nullglob
+          for z in nova-v*.zip; do
+            v="${z#nova-}"; v="${v%.zip}"
+            d="proj-$v"
+            unzip -o "$z" -d "$d"
+            sed -i "s/applicationId 'com.nova.gfn'/applicationId 'com.nova.gfn.$v'/" "$d/app/build.gradle"
+            sed -i "s/android:label=\"NOVA GFN\"/android:label=\"NOVA GFN $v\"/" "$d/app/src/main/AndroidManifest.xml"
+            grep -q "com.nova.gfn.$v" "$d/app/build.gradle"
+            grep -q "NOVA GFN $v" "$d/app/src/main/AndroidManifest.xml"
+            gradle -p "$d" assembleDebug --no-daemon
+            cp "$d/app/build/outputs/apk/debug/app-debug.apk" "NOVA-GFN-$v.apk"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: NOVA-GFN
-          path: |
-            NOVA-GFN.apk
-            NOVA-GFN-diag.apk
+          path: NOVA-GFN*.apk
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest NOVA-GFN.apk NOVA-GFN-diag.apk -t "NOVA GFN" -n "APK debug (NOVA-GFN.apk = original, NOVA-GFN-diag.apk = version (1) con diag.js; se instalan por separado)"
+          gh release create latest NOVA-GFN*.apk -t "NOVA GFN" -n "APK debug. NOVA-GFN.apk = original, NOVA-GFN-diag.apk = version (1), NOVA-GFN-vN.apk = nova-vN.zip. Cada uno se instala por separado."
